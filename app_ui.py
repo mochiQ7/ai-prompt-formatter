@@ -1,4 +1,5 @@
 import streamlit as st
+import requests
 
 st.set_page_config(page_title="プロンプト清書アプリ", layout="centered")
 
@@ -189,7 +190,34 @@ if st.button("プロンプトを清書する"):
             final_prompt = TEMPLATE_SUMMARY.format(input_text=combined_text)
             
         # 画面に出力
-        st.text_area("裏側で自動生成されたプロンプト案（このままAIサーバーへ送れる状態だよ）：", value=final_prompt, height=350)
-        st.success("✨ ナナミ特製・学生総合支援2段階プロンプトの自動生成に成功したよ！")
+        st.text_area("裏側で自動生成されたプロンプト案：", value=final_prompt, height=350)
+        
+
+        st.write("---")
+        st.subheader("🚀 AIサーバー（FastAPI）へデータを送信中...")
+        
+        # バックエンド接続先URL（仮。合体時にポート番号などを確定させます）
+        SERVER_URL = "http://localhost:8000/api/generate"
+        
+        payload = {
+            "username": username,
+            "purpose": purpose,
+            "final_prompt": final_prompt
+        }
+
+        try:
+            # ※まだサーバーが起動していない状態でのエラーを防ぐため、合体テストまで一時的にお休みにします
+            # response = requests.post(SERVER_URL, json=payload)
+            # api_result = response.json().get("result") 
+            
+            # デモ＆テスト用のダミー回答（通信が成功したと見立てて表示する仮の文字）
+            api_result = "（ここにGeminiの回答が、表示される）"
+            
+            st.write("### 🎓 AIからの最終回答")
+            st.info(api_result)
+            st.success("実装完了")
+            
+        except Exception as e:
+            st.error(f"サーバーへの通信に失敗しました。(エラー詳細: {e})")
     else:
         st.warning("文章を入力するか、ファイル添付・URL入力をしてください。")
