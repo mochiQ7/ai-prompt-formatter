@@ -3,56 +3,6 @@ import requests
 
 st.set_page_config(page_title="プロンプト清書アプリ", layout="centered")
 
-with st.sidebar:
-    st.title("👤 ユーザーエリア")
-    # 1. ユーザー名入力欄
-    username = st.text_input("ユーザー名（登録・ログイン）：", value="ナナミ")
-    
-    if username:
-        st.success(f"ログイン中: {username} さん")
-        st.write("---")
-        st.subheader("📜 あなたの過去ログ一覧")
-        
-        # 過去ログの例を表示
-        st.info("⏰ 2026/06/26 10:00\n 就活ES用\n「ホテルの宴会サービス...」")
-        st.info("⏰ 2026/06/26 09:30\n 調べもの\n「OSI参照モデルについて...」")
-    else:
-        st.warning("ユーザー名を入力してください")
-
-st.title("🤖 目的別プロンプト清書チャット")
-st.caption("AI前処理サーバー連携システム")
-
-# 1.利用目的の選択
-purpose = st.radio(
-    "【ステップ1】利用目的を選んでください：", 
-    ("🔍 調べもの・技術質問", "💼 就活ES用（自己PR・ガクチカ・志望動機）", "📝 課題・問題の解説", "✂ 長文の要約・抽出")
-)
-
-st.write("---")
-st.subheader("🛠️ ファイルを添付する")
-
-# 2-1.ファイルアップロード欄
-uploaded_file = st.file_uploader(
-    "資料・写真・ソースコードなど、任意のファイルを添付してください"
-)
-
-# 2-2.URL入力欄
-input_url = st.text_input(
-    "参考にしてほしいサイトのURLがあれば貼り付けてください：",
-    placeholder="https://example.com/sample-page"
-)
-
-st.write("---")
-
-# 3.テキスト入力
-user_input = st.text_area(
-    "簡単に内容を入力してください：", 
-    placeholder="ここに入力",
-    height=150
-)
-
-# 4つの目的別プロンプトテンプレート
-
 TEMPLATE_SEARCH = """# 役割
 あなたは世界最高峰のITテクニカルエキスパートおよび情報工学の大学教授です。
 
@@ -85,15 +35,28 @@ TEMPLATE_ES = """# 役割
   - ガクチカ ➡ STAR法（状況、課題、行動、結果）
   - 志望動機 ➡ 成し遂げたいこと、その原体験（なぜこの会社か）、自分の強みの活かし方
 - 【表現のビジネス化】: 学生らしい曖昧な表現や受動的な表現を、当事者意識と行動力が伝わるプロっぽいビジネス用語へ言い換えること。
+- 【情報十分性の評価】: ユーザーの入力データを確認し、具体的なエピソード、数値実績、行動の動機、直面した課題などの「深み」が不足しているか評価すること。
+- 【対話型インタビューの実行】: もし情報が不足しており、このままではクオリティの高いESが作れないと判断した場合は、無理に完成案を作ろうとせず、不足している要素を埋めるための【具体的な逆質問（インタビュー）】を3点以内で作成すること。
+- 【情報の蓄積】: すでにユーザーから引き出せている情報がある場合は、それをベースに構築を進めること。
 - 文字数は特に指定がない限り【400文字前後】に美しく収めること。
 
 # 入力データ（学生の就活テキスト）
 {input_text}
 
 # 出力フォーマット
-1. 判別されたカテゴリー（自己PR / ガクチカ / 志望動機）
-2. 劇的リライト案（400文字）
-3. 【面接対策】このESを見た面接官が確実に突っ込んでくる「想定深掘り質問」3選
+以下の状況に応じて、どちらか一方のフォーマットのみを選択して出力してください。
+
+■ パターンA：【情報不足のためインタビューを継続する】場合
+1. 判断：[情報不足のためインタビューを継続する]
+2. 判別されたカテゴリー：（自己PR / ガクチカ / 志望動機）
+3. ユーザーへの逆質問（インタビュー）：（不足している要素を埋める質問を3点以内で記載）
+
+■ パターンB：【情報が十分なのでES作成に進む】場合
+1. 判断：[情報が十分なのでES作成に進む]
+2. 判別されたカテゴリー：（自己PR / ガクチカ / 志望動機）
+3. 劇的リライト案（400文字）
+4. 【面接対策】このESを見た面接官が確実に突っ込んでくる「想定深掘り質問」3選
+
 """
 
 TEMPLATE_EXPLAIN = """# 役割
@@ -138,20 +101,87 @@ TEMPLATE_SUMMARY = """# 役割
 - 3点目
 """
 
-# 4.変換
-if st.button("プロンプトを清書する"):
-    if user_input or uploaded_file or input_url:
+# セッションメモリ
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "editing_prompt" not in st.session_state:
+    st.session_state.editing_prompt = ""
+if "current_user_input" not in st.session_state:
+    st.session_state.current_user_input = ""
+
+# サイドバー
+with st.sidebar:
+    st.image("gyopi.jpg", width=200)
+    st.title("👤 ユーザーエリア")
+    # 1. ユーザー名入力欄
+    username = st.text_input("ユーザー名（登録・ログイン）：", value="ナナミ")
+    
+    if username:
+        st.success(f"ログイン中: {username} さん")
         st.write("---")
-        st.subheader("📝 ローカルAIに送信する「清書されたプロンプト」:")
+        st.subheader("📜 あなたの過去ログ一覧")
         
-        combined_text = ""
+        if st.session_state.chat_history:
+            for chat in st.session_state.chat_history:
+                if chat["role"] == "user":
+                    st.caption(f"{chat['message'][:15]}...") 
+        else:                   
+            # まだ一度も送信ボタンを押していない時の初期表示
+            st.info("ログデータなし")
+    else:
+        st.warning("ユーザー名を入力してください")
+
+# メイン画面
+st.title("🤖 目的別プロンプト清書チャット")
+st.caption("AI前処理サーバー連携システム")
+
+# 利用目的の選択
+st.markdown("### 利用目的を選んでください：")
+purpose = st.radio(
+    "",
+    ("🔍 調べもの・技術質問", "💼 就活ES用（自己PR・ガクチカ・志望動機）", "📝 課題・問題の解説", "✂ 長文の要約・抽出")
+)
+
+st.write("---")
+st.subheader("🛠️ ファイルを添付する")
+
+# ファイルアップロード欄
+uploaded_file = st.file_uploader(
+    "資料・写真・ソースコードなど、任意のファイルを添付してください"
+)
+# URL入力欄
+input_url = st.text_input(
+    "参考にしてほしいサイトのURLがあれば貼り付けてください：",
+    placeholder="https://example.com/sample-page"
+)
+st.write("---")
+
+
+# 過去のチャットタイムライン表示
+for chat in st.session_state.chat_history:
+    with st.chat_message(chat["role"], avatar="👤" if chat["role"] == "user" else "🐟"):
+        st.write(chat["message"])
+
+# チャット入力欄
+user_input = st.chat_input(
+    "簡単に指示や内容を入力してください：", 
+)
+
+if user_input:
+    # パターンA：すでにプロンプトを作成中で、追加のチャット指示が来た場合（自動送り直しループ）
+    if st.session_state.editing_prompt:
+        st.session_state.editing_prompt += f"\n\n# 追加修正要求:\n- {user_input}\n- 上記の要求を最優先でプロンプトの#制約条件に組み込んで、全体の構成を維持したままアップデートしてください。"
+        st.rerun()
         
-        # ファイルが添付されている場合の全自動仕分け・読み込み
+    # パターンB：まっさらな状態からの最初の入力の場合
+    else:
+        st.session_state.current_user_input = user_input
+        combined_text = f"【ユーザーからの指示】: {user_input}\n"
+        
         if uploaded_file is not None:
             file_name = uploaded_file.name
             combined_text += f"【添付ファイル名】: {file_name}\n"
-            
-            # 画像形式の場合
+        # 画像形式の場合
             if file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')):
                 combined_text += "(※画像データ：Geminiのマルチモーダル機能で直接解析します)\n\n"
             # Office/PDF形式の場合
@@ -161,63 +191,71 @@ if st.button("プロンプトを清書する"):
                 combined_text += "(※Wordデータ：バックエンドでテキストを抽出して埋め込みます)\n\n"
             elif file_name.lower().endswith(('.xlsx', '.xls', '.csv')):
                 combined_text += "(※データシート：バックエンドでデータ表をテキスト化して埋め込みます)\n\n"
-            # それ以外のすべてのファイル（txt, py, md, json, その他すべてのテキスト系）
+            # それ以外のすべてのテキスト系ファイル（txt, py, md, jsonなど）
             else:
                 try:
-                    # テキストファイルとして読み込む
                     file_contents = uploaded_file.read().decode("utf-8")
                     combined_text += f"--- ファイル中身 ---\n{file_contents}\n-------------------\n\n"
                 except Exception:
-                    # バイナリファイル（zipなど）で文字として読めなかった場合
                     combined_text += "(※注意：テキストとして読めない特殊形式ファイルです。バックエンドで解析を行います)\n\n"
         
-        # URL
         if input_url:
-            combined_text += f"【対象の参考URL】: {input_url}\n(※バックエンドでスクレイピングします)\n\n"
-            
-        # ユーザー指示がある場合
-        if user_input:
-            combined_text += f"【ユーザーからの指示】: {user_input}\n"
-            
-        # 最終プロンプトの組み立て
+            combined_text += f"【参考URL】: {input_url}\n"
+    
         if purpose == "🔍 調べもの・技術質問":
-            final_prompt = TEMPLATE_SEARCH.format(input_text=combined_text)
+            st.session_state.editing_prompt = TEMPLATE_SEARCH.format(input_text=combined_text)
         elif purpose == "💼 就活ES用（自己PR・ガクチカ・志望動機）":
-            final_prompt = TEMPLATE_ES.format(input_text=combined_text)
+            st.session_state.editing_prompt = TEMPLATE_ES.format(input_text=combined_text)
         elif purpose == "📝 課題・問題の解説（全科目対応）":
-            final_prompt = TEMPLATE_EXPLAIN.format(input_text=combined_text)
+            st.session_state.editing_prompt = TEMPLATE_EXPLAIN.format(input_text=combined_text)
         else:
-            final_prompt = TEMPLATE_SUMMARY.format(input_text=combined_text)
+            st.session_state.editing_prompt = TEMPLATE_SUMMARY.format(input_text=combined_text)
             
-        # 画面に出力
-        st.text_area("裏側で自動生成されたプロンプト案：", value=final_prompt, height=350)
-        
+        st.rerun()
 
-        st.write("---")
-        st.subheader("🚀 AIサーバー（FastAPI）へデータを送信中...")
+# 動的プロンプト確認・直接編集＆最終送信エリア
+if st.session_state.editing_prompt:
+    st.write("---")
+    with st.chat_message("assistant", avatar="gyopi.jpg"):
+        st.write("このテキストボックス内を**直接手動で修正**してもいいし、下のチャット欄に**追加の指示を入力**して自動送り直しをさせてもいいよ！")
         
-        # バックエンド接続先URL（仮。合体時にポート番号などを確定させます）
-        SERVER_URL = "http://localhost:8000/api/generate"
+        # 手動編集も追従するテキストエリア
+        final_prompt_input = st.text_area(
+            "現在育成中のプロンプト（編集してGeminiへ送信可能）：", 
+            value=st.session_state.editing_prompt, 
+            height=300
+        )
+        st.session_state.editing_prompt = final_prompt_input
         
-        payload = {
-            "username": username,
-            "purpose": purpose,
-            "final_prompt": final_prompt
-        }
+        # 最終送信ボタン
+        if st.button("🚀 このプロンプトでGeminiに最終送信する"):
+            st.session_state.chat_history.append({
+                "role": "user", 
+                "message": st.session_state.current_user_input
+            })
 
-        try:
-            # ※まだサーバーが起動していない状態でのエラーを防ぐため、合体テストまで一時的にお休みにします
-            # response = requests.post(SERVER_URL, json=payload)
-            # api_result = response.json().get("result") 
+            # PythonによるAPI通信・処理実装のコア部分
+            SERVER_URL = "http://localhost:8000/api/generate"
+            payload = {
+                "username": username, 
+                "purpose": purpose, 
+                "final_prompt": final_prompt_input
+            }
             
-            # デモ＆テスト用のダミー回答（通信が成功したと見立てて表示する仮の文字）
-            api_result = "（ここにGeminiの回答が、表示される）"
+            try:
+                # 擬似サーバー（または本物）への送信
+                response = requests.post(SERVER_URL, json=payload)
+                api_result = response.json().get("result")
+                
+            except Exception as e:
+                api_result = f"【ぎょぴちゃんAIからの最終回答】\n\n[送信された最終プロンプト]:\n{final_prompt_input}\n\n（※現在はテスト通信モードです。インフラ合体後に本物のGeminiの答えがここに出るよ！）"
             
-            st.write("### 🎓 AIからの最終回答")
-            st.info(api_result)
-            st.success("実装完了")
+            st.session_state.chat_history.append({
+                "role": "assistant", 
+                "message": api_result
+            })
             
-        except Exception as e:
-            st.error(f"サーバーへの通信に失敗しました。(エラー詳細: {e})")
-    else:
-        st.warning("文章を入力するか、ファイル添付・URL入力をしてください。")
+            # クリーンアップしてリフレッシュ
+            st.session_state.editing_prompt = ""
+            st.session_state.current_user_input = ""
+            st.rerun()
