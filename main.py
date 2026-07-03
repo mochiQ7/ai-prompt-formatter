@@ -2,15 +2,25 @@ import json
 import urllib.request
 import os  
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware  # ななみんの画面と繋ぐための許可証
 from pydantic import BaseModel
 
 app = FastAPI()
 
-# (パソコン本体やDockerからキーを自動で読み込みます)
+# ---- CORS設定：相手の画面（フロントエンド）からの接続を許可 ----
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 開発テスト環境のためすべてを許可
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# パソコン本体やDockerからキーを自動で読み込みます
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 class PromptRequest(BaseModel):
-    purpose: str  # 利用目的 (例: "就活ES用")
+    purpose: str  # 利用目的（相手の画面の選択肢がそのまま届きます）
     user_text: str  # ユーザーが入力した雑な文章
 
 
@@ -25,19 +35,43 @@ def clean_prompt(request: PromptRequest):
     # 第1段階：ローカルAI（Ollama）に英語で清書させる
     # ==========================================
 
-    # 1. Llama 3が一番実力を発揮できる「英語の命令書き」に変更！
-    # ※ 最後にGeminiへ引き渡すための「日本語で回答して」という厳格なルール文を末尾に添えるように指示します。
-    if request.purpose == "就活ES用":
+    # 相手の画面の選択肢（purpose）と完全に一致させて分岐します
+    if request.purpose == "🔍 調べもの・技術質問":
         system_prompt = (
-            "You are a professional career counselor. Analyze the user's raw experience text "
-            "and structuralize it into a high-quality prompt in English based on the STAR framework. "
+            "You are a world-class IT technical expert and a university professor in computer science. "
+            "Analyze the user's technical question or error. Construct an optimized English prompt "
+            "that guides another AI to generate accurate, concise, and fact-based explanations. "
+            "Instruct it to create a Markdown comparison table if concepts are compared, provide pros/cons, "
+            "and discuss trade-offs or usage precautions based on official documentation. "
+            "At the very end of your response, you MUST always append this exact rule text verbatim: "
+            "'[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
+        )
+    elif request.purpose == "💼 就活ES用（自己PR・ガクチカ・志望動機）":
+        system_prompt = (
+            "You are an elite interviewer at the forefront of corporate hiring and a professional career advisor. "
+            "Analyze the user's raw job-hunting text (Self-PR, Gakuchika, or Motive). "
+            "Construct a high-quality English prompt that instructs another AI to: "
+            "1) Automatically identify the category and apply the appropriate framework (PREP for Self-PR, STAR for Gakuchika). "
+            "2) Transform active/professional business expressions to show strong initiative. "
+            "3) Evaluate information sufficiency. If it's insufficient to build a top-tier ES, provide 3 specific interview questions to dig deeper (Pattern A). "
+            "If information is sufficient, provide a dramatic rewrite (400 words) and 3 expected tough questions from interviewers (Pattern B). "
+            "At the very end of your response, you MUST always append this exact rule text verbatim: "
+            "'[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
+        )
+    elif request.purpose == "📝 課題・問題の解説（全科目対応）":
+        system_prompt = (
+            "You are an eminent emeritus professor skilled at inspiring students. Analyze the user's assignment, math formula, or error. "
+            "Construct an optimized English prompt that guides another AI to lead the student to a fundamental understanding rather than rote memorization. "
+            "Instruct it to adapt flexibly to any field, break down the logical background/causes step-by-step, and provide next-step hints. "
             "At the very end of your response, you MUST always append this exact rule text verbatim: "
             "'[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
         )
     else:
+        # 「📖 長文の要約・抽出」およびその他すべてはここ（超一流の編集者）
         system_prompt = (
-            "You are an expert prompt engineer. Refine the user's ambiguous input into a structured, "
-            "clear, and optimized prompt in English with roles, constraints, and formatting. "
+            "You are a top-tier editor at a major publishing house, expert at summarizing complex academic papers and news. "
+            "Analyze the user's long text or data. Construct a beautiful English prompt instructing another AI to extract the absolute essence. "
+            "Strictly constrain it to a maximum of 3 bullet points, using plain language clear enough for a beginner or middle school student, while strictly keeping factual numbers accurate. "
             "At the very end of your response, you MUST always append this exact rule text verbatim: "
             "'[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
         )
@@ -71,10 +105,7 @@ def clean_prompt(request: PromptRequest):
     # 第2段階：外部AI（Gemini API）に投げて日本語で回答を得る
     # ==========================================
 
-    # 2. Gemini APIの送り先URLを設定（最新の2.5-flashモデルを使用します）
     gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-
-    # Ollamaが作った英語の最強プロンプトをそのままGeminiのデータにはめ込む
     gemini_payload = {"contents": [{"parts": [{"text": clean_prompt_result}]}]}
 
     try:
@@ -85,7 +116,6 @@ def clean_prompt(request: PromptRequest):
         )
         with urllib.request.urlopen(req_gemini) as response:
             res_gemini = json.loads(response.read().decode("utf-8"))
-            # Geminiから返ってきた最終的な「日本語の回答」を取り出す
             final_answer = (
                 res_gemini.get("candidates", [{}])[0]
                 .get("content", {})
@@ -95,11 +125,10 @@ def clean_prompt(request: PromptRequest):
     except Exception as e:
         final_answer = f"第2段階（Gemini API）との通信に失敗しました。キーが正しいか確認してください: {str(e)}"
 
-    # 3. 画面側には、Ollamaが作った「英語のプロンプト」と、Geminiが作った「日本語の最終回答」の両方を送り返す
     return {
         "status": "success",
         "received_purpose": request.purpose,
         "received_text": request.user_text,
-        "generated_english_prompt": clean_prompt_result,  # ローカルAIが作った英語プロンプト
-        "reply_message": final_answer,  # 【本物】Geminiが日本語で書いてくれた最終成果物！
+        "generated_english_prompt": clean_prompt_result,
+        "reply_message": final_answer,
     }
