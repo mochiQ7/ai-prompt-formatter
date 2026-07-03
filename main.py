@@ -2,28 +2,28 @@ import json
 import urllib.request
 import os  
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # ななみんの画面と繋ぐための許可証
+from fastapi.middleware.cors import CORSMiddleware  # フロントエンド（UI）とのクロスドメイン通信を許可
 from pydantic import BaseModel
 
 app = FastAPI()
 
-# ---- CORS設定：ななみんの画面（フロントエンド）からの接続を許可 ----
+# ---- CORS設定：フロントエンド（Streamlit）からの接続を許可 ----
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 開発テスト環境のためすべてを許可
+    allow_origins=["*"],  # 開発環境のためすべてを許可
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# パソコン本体やDockerからキーを自動で読み込みます
+# 環境変数からGeminiのAPIキーを取得
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# ななみんのStreamlit（payload）の形に完璧に合わせることでエラーを回避！
+# フロントエンドから送信されるリクエストのデータ構造を定義
 class PromptRequest(BaseModel):
     username: str
-    purpose: str       # ななみんの選択した目的の文字列がそのまま届く
-    final_prompt: str  # ななみんが画面で組み立てた「日本語の最強テンプレート付きプロンプト」
+    purpose: str       # 利用目的（UI側の選択肢がそのまま格納されます）
+    final_prompt: str  # UI側で構築された日本語テンプレート付きのプロンプト
 
 
 @app.get("/")
@@ -31,14 +31,14 @@ def read_root():
     return {"status": "success", "message": "AI前処理・本処理サーバー起動中！"}
 
 
-# ななみんの画面が呼び出すURL「/api/generate」に窓口を合わせて完全合体！
+# フロントエンドの呼び出しエンドポイントに合わせて定義
 @app.post("/api/generate")
 def clean_prompt(request: PromptRequest):
     # ==========================================
-    # 第1段階：ローカルAI（Ollama / Llama 3）でプロンプトを極限まで洗練
+    # 第1段階：ローカルAI（Ollama / Llama 3）によるプロンプトの最適化
     # ==========================================
 
-    # ななみんの画面の選択肢（purpose）と1文字もズレずに完全に一致させて分岐
+    # フロントエンド側の選択肢（purpose）に応じてLlama 3への命令（メタプロンプト）を分岐
     if request.purpose == "💼 就活ES用（自己PR・ガクチカ・志望動機）":
         system_prompt = (
             "You are an elite interviewer and an expert prompt engineer. "
@@ -57,7 +57,6 @@ def clean_prompt(request: PromptRequest):
             "Text to append: '[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
         )
     elif request.purpose == "📝 課題・問題の解説":
-        # ななみんのapp_ui.pyにある「📝 課題・問題の解説」の文字と完全連動
         system_prompt = (
             "You are an eminent professor skilled at deep educational reasoning. "
             "Refine the user's educational prompt template into a highly effective English prompt "
@@ -66,7 +65,7 @@ def clean_prompt(request: PromptRequest):
             "Text to append: '[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
         )
     else:
-        # 「✂ 長文の要約・抽出」およびその他汎用の部屋
+        # 「✂ 長文の要約・抽出」およびその他汎用リクエスト
         system_prompt = (
             "You are a top-tier publishing editor and expert prompt engineer. "
             "Refine the user's text summary template into an incredibly clean, optimized English prompt. "
@@ -76,7 +75,8 @@ def clean_prompt(request: PromptRequest):
         )
 
     ollama_url = "http://host.docker.internal:11434/api/generate"
-    # ななみんがすでに日本語テンプレートで包んでくれた request.final_prompt をLlama 3に投入！
+    
+    # UI側で組み立てられたテンプレートをLlama 3のコンテキストに注入
     prompt_data = (
         f"【Instruction】{system_prompt}\n【Structured Prompt Template】{request.final_prompt}"
     )
@@ -98,15 +98,15 @@ def clean_prompt(request: PromptRequest):
     except Exception as e:
         return {
             "status": "error",
-            "message": f"第1段階（Ollama）で通信失敗しました: {str(e)}",
+            "message": f"第1段階（Ollama）での通信に失敗しました: {str(e)}",
         }
 
     # ==========================================
-    # 第2段階：外部AI（Gemini API）に投げて日本語で大成功回答を得る
+    # 第2段階：本処理AI（Gemini API）による最終回答の生成
     # ==========================================
 
     gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    # Llama 3が英語で超ロジカルに強化してくれたプロンプトをそのままGeminiへパス！
+    # Llama 3によって最適化された英語プロンプトをGemini APIに引き渡し
     gemini_payload = {"contents": [{"parts": [{"text": clean_prompt_result}]}]}
 
     try:
@@ -124,9 +124,9 @@ def clean_prompt(request: PromptRequest):
                 .get("text", "Geminiからの応答を取り出せませんでした。")
             )
     except Exception as e:
-        final_answer = f"第2段階（Gemini API）との通信に失敗しました。キーが正しいか確認してください: {str(e)}"
+        final_answer = f"第2段階（Gemini API）との通信に失敗しました。APIキーまたはネットワークを確認してください: {str(e)}"
 
-    # ななみんの画面が期待している「"result"」というキー名で、Geminiの本物の回答を返却！
+    # フロントエンドが期待する「result」キーに最終回答を格納して返却
     return {
         "status": "success",
         "result": final_answer
