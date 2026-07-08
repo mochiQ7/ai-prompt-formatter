@@ -217,30 +217,27 @@ if st.session_state.editing_prompt:
                 "message": st.session_state.first_input
             })
 
-            # API通信処理
-            SERVER_URL = "http://localhost:8000/api/generate"
+        # サーバーエンドポイントURL
+            SERVER_URL = "http://localhost:8000/api/clean-prompt"
             payload = {
-                "username": username, 
                 "purpose": purpose, 
-                "final_prompt": final_prompt_input
+                "user_text": final_prompt_input
             }
-            
-            try:
-                # 擬似サーバー（または本物）への送信
-                response = requests.post(SERVER_URL, json=payload)
-                api_result = response.json().get("result")
-            
-            except Exception as e:
-                backticks = "```"
-                api_result = f"""### ぎょぴちゃんAIからの回答
-
-**🚀 送信された最終プロンプト:**
-{backticks}text
-{final_prompt_input}
-{backticks}
-
-（※現在はテスト通信モードです。インフラ合体後に本物のGeminiの答えがここに出るよ！）"""    
-            
+            # グルグル回る待機モーションを出しながら通信開始
+            with st.spinner("🤖 AIがプロンプトを分析して最適化しています..."):
+                try:
+                    response = requests.post(SERVER_URL, json=payload, timeout=45)
+                    if response.status_code == 200:
+                        # 成功したら本物のAIの答えを抽出
+                        result_data = response.json()
+                        api_result = result_data.get("cleaned_text", "AIからの返却データが空っぽでした")
+                    else:
+                        api_result = f"❌ サーバーエラーが発生しました (Status Code: {response.status_code})\nFastAPI側のログを確認してください。"
+                except requests.exceptions.ConnectionError:
+                    api_result = "❌ バックエンドサーバー（Docker）に接続できませんでした。Dockerが起動しているか、ポート8000番が合っているか確認してください。"
+                except Exception as e:
+                    api_result = f"❌ 予期せぬエラーが発生しました:\n{e}"
+            # チャットログに本物の回答を追加
             st.session_state.chat_history.append({
                 "role": "assistant", 
                 "message": api_result
