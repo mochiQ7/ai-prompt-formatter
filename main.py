@@ -21,7 +21,6 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
  
 # フロントエンドから送信されるリクエストのデータ構造を定義
 class PromptRequest(BaseModel):
-    username: str
     purpose: str       # 利用目的
     final_prompt: str  # 生のエピソード（カフェバイト…）
  
