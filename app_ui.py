@@ -52,7 +52,7 @@ if user_input:
         combined_text += f"\n(参考URL: {input_url})"
  
 
-    SERVER_GENERATOR_URL = "http://localhost:8000/api/generate"
+    SERVER_GENERATOR_URL = "https://absinthe-protrude-datebook.ngrok-free.dev"
     
     payload = {
         "purpose": purpose,
@@ -91,7 +91,7 @@ if st.session_state.editing_prompt:
             st.session_state.chat_history.append({"role": "user", "message": st.session_state.first_input})
  
             # FastAPIのGemini送信エンドポイント
-            SERVER_GEMINI_URL = "http://localhost:8000/api/execute-gemini"
+            SERVER_GEMINI_URL = "https://absinthe-protrude-datebook.ngrok-free.dev"
             gemini_payload = {
                 "final_prompt": final_prompt_input
             }
