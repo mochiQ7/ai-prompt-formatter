@@ -218,7 +218,7 @@ if st.session_state.editing_prompt:
             })
 
         # サーバーエンドポイントURL
-            SERVER_URL = "http://localhost:8000/api/clean-prompt"
+            SERVER_URL = "http://localhost:8000/api/generate"
             payload = {
                 "purpose": purpose, 
                 "user_text": final_prompt_input
