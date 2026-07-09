@@ -52,11 +52,11 @@ if user_input:
         combined_text += f"\n(参考URL: {input_url})"
  
 
-    SERVER_GENERATOR_URL = "http://localhost:8000/api/execute-gemini"
+    SERVER_GENERATOR_URL = "https://absinthe-protrude-datebook.ngrok-free.dev/api/generate"
     
     payload = {
         "purpose": purpose,
-        "final_prompt": combined_text
+        "user_text": combined_text
     }
     
     with st.spinner("🤖 第1段階：Ollamaがプロンプトを構築中..."):
@@ -73,7 +73,7 @@ if user_input:
         except Exception as e:
             st.error(f"❌ FastAPIサーバー（ポート8000）に接続できません。Dockerが起動しているか確認してください: {e}")
             
-    st.rerun()
+    #st.rerun()
  
 # Ollamaが作ったプロンプトを編集して、Geminiへ送信する
 if st.session_state.editing_prompt:
@@ -91,9 +91,10 @@ if st.session_state.editing_prompt:
             st.session_state.chat_history.append({"role": "user", "message": st.session_state.first_input})
  
             # FastAPIのGemini送信エンドポイント
-            SERVER_GEMINI_URL = "http://localhost:8000/api/execute-gemini"
+            SERVER_GEMINI_URL = "https://absinthe-protrude-datebook.ngrok-free.dev/api/generate"
             gemini_payload = {
-                "final_prompt": final_prompt_input
+                "purpose": "Gemini最終送信",
+                "user_text": final_prompt_input
             }
             
             with st.spinner("✨ 第2段階：Gemini APIが最終的な文章を生成中..."):
