@@ -15,20 +15,9 @@ if "first_input" not in st.session_state:
 # サイドバー
 with st.sidebar:
     st.image("gyopi.jpg", width=200)
-    st.title("ユーザーエリア")
-    username = st.text_input("ユーザー名（登録・ログイン）：", value="ナナミ")
-    
-    if username:
-        st.success(f"ログイン中: {username} さん")
-        st.write("---")
-        st.subheader("過去ログ一覧")
-        
-        if st.session_state.chat_history:
-            for chat in st.session_state.chat_history:
-                if chat["role"] == "user":
-                    st.caption(f"{chat['message'][:15]}...")
-        else:                  
-            st.info("ログデータなし")
+    st.write("---")
+    st.caption("AI Prompt Formatter v1.0")
+
  
 # メイン画面
 st.title("目的別プロンプト清書チャット")
@@ -52,7 +41,7 @@ for chat in st.session_state.chat_history:
 # チャット入力
 user_input = st.chat_input("簡単に指示や内容を入力してください：")
  
-# 🎯 【ステップ1】チャット送信で果歩ちゃんのFastAPI（部屋1）を呼び出し、プロンプトを生成
+# プロンプトを生成
 if user_input:
     st.session_state.first_input = user_input
     
@@ -62,21 +51,18 @@ if user_input:
     if input_url:
         combined_text += f"\n(参考URL: {input_url})"
  
-    # 修正ポイント：FastAPI（ポート8000）の受付窓口を指定
+
     SERVER_GENERATOR_URL = "http://localhost:8000/api/generate"
     
-    # 修正ポイント：FastAPI側の PromptRequest の構造に完全一致させる
     payload = {
-        "username": username,
         "purpose": purpose,
         "final_prompt": combined_text
     }
     
-    with st.spinner("🤖 第1段階：バックエンドサーバー経由でOllamaが最強プロンプトを構築中..."):
+    with st.spinner("🤖 第1段階：Ollamaがプロンプトを構築中..."):
         try:
             response = requests.post(SERVER_GENERATOR_URL, json=payload, timeout=180)
             if response.status_code == 200:
-                # 修正ポイント：FastAPIが返す "result" から生成されたプロンプトを抽出
                 res_data = response.json()
                 if res_data.get("status") == "success":
                     st.session_state.editing_prompt = res_data.get("result", "プロンプト生成失敗")
@@ -89,7 +75,7 @@ if user_input:
             
     st.rerun()
  
-# 🎯 【ステップ2】Ollamaが作ったプロンプトを編集して、最終決定ボタンでGeminiへ送信する
+# Ollamaが作ったプロンプトを編集して、Geminiへ送信する
 if st.session_state.editing_prompt:
     st.write("---")
     with st.chat_message("assistant", avatar="gyopi.jpg"):
@@ -104,13 +90,13 @@ if st.session_state.editing_prompt:
         if st.button("🚀 このプロンプトで最終決定・Geminiへ送信する"):
             st.session_state.chat_history.append({"role": "user", "message": st.session_state.first_input})
  
-            # FastAPIのGemini送信エンドポイント（部屋2）を呼び出す
+            # FastAPIのGemini送信エンドポイント
             SERVER_GEMINI_URL = "http://localhost:8000/api/execute-gemini"
             gemini_payload = {
                 "final_prompt": final_prompt_input
             }
             
-            with st.spinner("✨ 第2段階：Gemini APIが最終的な日本語リライト文章を生成中..."):
+            with st.spinner("✨ 第2段階：Gemini APIが最終的な文章を生成中..."):
                 try:
                     response = requests.post(SERVER_GEMINI_URL, json=gemini_payload, timeout=180)
                     if response.status_code == 200:
