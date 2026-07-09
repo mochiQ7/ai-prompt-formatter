@@ -56,7 +56,7 @@ if user_input:
     
     payload = {
         "purpose": purpose,
-        "user_text": combined_text
+        "final_prompt": combined_text
     }
     
     with st.spinner("🤖 第1段階：Ollamaがプロンプトを構築中..."):
@@ -91,10 +91,9 @@ if st.session_state.editing_prompt:
             st.session_state.chat_history.append({"role": "user", "message": st.session_state.first_input})
  
             # FastAPIのGemini送信エンドポイント
-            SERVER_GEMINI_URL = "https://absinthe-protrude-datebook.ngrok-free.dev/api/generate"
+            SERVER_GEMINI_URL = "https://absinthe-protrude-datebook.ngrok-free.dev/api/execute-gemini"
             gemini_payload = {
-                "purpose": "Gemini最終送信",
-                "user_text": final_prompt_input
+                "final_prompt": final_prompt_input
             }
             
             with st.spinner("✨ 第2段階：Gemini APIが最終的な文章を生成中..."):
