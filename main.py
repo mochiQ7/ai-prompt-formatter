@@ -2,11 +2,11 @@ import json
 import urllib.request
 import os  
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # フロントエンド（UI）とのクロスドメイン通信を許可
-from pydantic import BaseModel
-
+from fastapi.middleware.cors import CORSMiddleware  
+from pydantic import BaseModel                  
+ 
 app = FastAPI()
-
+ 
 # ---- CORS設定：フロントエンド（Streamlit）からの接続を許可 ----
 app.add_middleware(
     CORSMiddleware,
@@ -15,77 +15,70 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+ 
 # 環境変数からGeminiのAPIキーを取得
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
+ 
 # フロントエンドから送信されるリクエストのデータ構造を定義
 class PromptRequest(BaseModel):
     username: str
-    purpose: str       # 利用目的（UI側の選択肢がそのまま格納されます）
-    final_prompt: str  # UI側で構築された日本語テンプレート付きのプロンプト
-
-
+    purpose: str       # 利用目的
+    final_prompt: str  # 生のエピソード（カフェバイト…）
+ 
+ 
 @app.get("/")
 def read_root():
     return {"status": "success", "message": "AI前処理・本処理サーバー起動中！"}
-
-
-# フロントエンドの呼び出しエンドポイントに合わせて定義
+ 
+ 
+# ==========================================
+# 🚪 部屋1：Ollamaでプロンプトを「動的生成」する受付窓口
+# ==========================================
 @app.post("/api/generate")
 def clean_prompt(request: PromptRequest):
-    # ==========================================
-    # 第1段階：ローカルAI（Ollama / Llama 3）によるプロンプトの最適化
-    # ==========================================
-
-    # フロントエンド側の選択肢（purpose）に応じてLlama 3への命令（メタプロンプト）を分岐
-    if request.purpose == "💼 就活ES用（自己PR・ガクチカ・志望動機）":
+    
+    # 目的別のメタ指示（Ollamaへの命令は英語で出しつつ、成果物は100%日本語に固定する）
+    if "就活ES" in request.purpose or "自己PR" in request.purpose:
         system_prompt = (
             "You are an elite interviewer and an expert prompt engineer. "
-            "The user will provide a structured Japanese job-hunting prompt template. "
-            "Optimize and rewrite this into a highly professional, logical English meta-prompt. "
-            "Instruct the final LLM to evaluate text based on STAR/PREP frameworks and strict criteria. "
-            "At the very end of your response, you MUST always append this exact rule text verbatim: "
-            "Text to append: '[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
+            "Analyze the user's input and generate a highly structured, professional prompt in JAPANESE for Gemini. "
+            "The output must be a well-crafted Japanese instruction that sets a persona of a professional career advisor, "
+            "includes the user's experience, and enforces strict output formats (PREP/STAR methods). "
+            "⚠️Strict Rule: Output ONLY the final Japanese prompt. No English, no explanations, no greetings."
         )
-    elif request.purpose == "🔍 調べもの・技術質問":
+    elif "調べもの" in request.purpose or "技術質問" in request.purpose:
         system_prompt = (
-            "You are a world-class IT technical expert and senior software engineer. "
-            "Optimize the user's structured query template into a deeply technical, logical English prompt. "
-            "Ensure it guides the final LLM to provide architectural insights, comparison tables, and trade-offs. "
-            "At the very end of your response, you MUST always append this exact rule text verbatim: "
-            "Text to append: '[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
+            "You are a world-class IT technical expert. "
+            "Generate a deeply technical, logical prompt in JAPANESE for Gemini based on the user's question. "
+            "The output prompt must instruct Gemini to provide clear explanations and comparison tables. "
+            "⚠️Strict Rule: Output ONLY the final Japanese prompt. No English, no explanations, no greetings."
         )
-    elif request.purpose == "📝 課題・問題の解説":
+    elif "課題" in request.purpose or "問題" in request.purpose:
         system_prompt = (
-            "You are an eminent professor skilled at deep educational reasoning. "
-            "Refine the user's educational prompt template into a highly effective English prompt "
-            "that guides the final LLM to explain core principles step-by-step with clear logical background. "
-            "At the very end of your response, you MUST always append this exact rule text verbatim: "
-            "Text to append: '[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
+            "You are an eminent professor. "
+            "Generate a highly effective prompt in JAPANESE for Gemini that guides a student step-by-step through core principles. "
+            "The output prompt must instruct Gemini to explain causes and logical steps. "
+            "⚠️Strict Rule: Output ONLY the final Japanese prompt. No English, no explanations, no greetings."
         )
     else:
-        # 「✂ 長文の要約・抽出」およびその他汎用リクエスト
         system_prompt = (
-            "You are a top-tier publishing editor and expert prompt engineer. "
-            "Refine the user's text summary template into an incredibly clean, optimized English prompt. "
-            "Enforce strict constraints such as 3 concise bullet points and plain language clear for beginners. "
-            "At the very end of your response, you MUST always append this exact rule text verbatim: "
-            "Text to append: '[Strict Rule: Please provide the final output in natural, professional, and polite Japanese.]'"
+            "You are a top-tier publishing editor. "
+            "Generate an optimized summary prompt in JAPANESE for Gemini based on the user's text. "
+            "The output prompt must instruct Gemini to summarize points into strictly 3 clear bullets. "
+            "⚠️Strict Rule: Output ONLY the final Japanese prompt. No English, no explanations, no greetings."
         )
-
+ 
     ollama_url = "http://host.docker.internal:11434/api/generate"
+   
+    # ユーザーのエピソードとシステム命令を結合
+    prompt_data = f"【Instruction】{system_prompt}\n【User Input】\"{request.final_prompt}\" (Purpose: {request.purpose})"
     
-    # UI側で組み立てられたテンプレートをLlama 3のコンテキストに注入
-    prompt_data = (
-        f"【Instruction】{system_prompt}\n【Structured Prompt Template】{request.final_prompt}"
-    )
     ollama_payload = {
         "model": "llama3",
         "prompt": prompt_data,
         "stream": False,
     }
-
+ 
     try:
         req_ollama = urllib.request.Request(
             ollama_url,
@@ -98,17 +91,29 @@ def clean_prompt(request: PromptRequest):
     except Exception as e:
         return {
             "status": "error",
-            "message": f"第1段階（Ollama）での通信に失敗しました: {str(e)}",
+            "message": f"Ollamaとの通信に失敗しました: {str(e)}",
         }
-
-    # ==========================================
-    # 第2段階：本処理AI（Gemini API）による最終回答の生成
-    # ==========================================
-
+ 
+    # フロントエンドが待っている "result" というキーで結果を返す
+    return {
+        "status": "success",
+        "result": clean_prompt_result
+    }
+ 
+ 
+# ==========================================
+# 🚪 部屋2：修正されたプロンプトを「Gemini」に送信する受付窓口
+# ==========================================
+class GeminiRequest(BaseModel):
+    final_prompt: str
+ 
+@app.post("/api/execute-gemini")
+def execute_gemini(request: GeminiRequest):
+   
     gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    # Llama 3によって最適化された英語プロンプトをGemini APIに引き渡し
-    gemini_payload = {"contents": [{"parts": [{"text": clean_prompt_result}]}]}
-
+   
+    gemini_payload = {"contents": [{"parts": [{"text": request.final_prompt}]}]}
+ 
     try:
         req_gemini = urllib.request.Request(
             gemini_url,
@@ -124,9 +129,8 @@ def clean_prompt(request: PromptRequest):
                 .get("text", "Geminiからの応答を取り出せませんでした。")
             )
     except Exception as e:
-        final_answer = f"第2段階（Gemini API）との通信に失敗しました。APIキーまたはネットワークを確認してください: {str(e)}"
-
-    # フロントエンドが期待する「result」キーに最終回答を格納して返却
+        final_answer = f"Gemini APIとの通信に失敗しました。APIキーまたはネットワークを確認してください: {str(e)}"
+ 
     return {
         "status": "success",
         "result": final_answer
